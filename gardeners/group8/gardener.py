@@ -161,7 +161,6 @@ class Gardener8(Gardener):
 
         best_pos = None
         best_score = -1
-
         var_r = variety.radius
 
         # loop through anchors
@@ -172,11 +171,13 @@ class Gardener8(Gardener):
             anchor_x = anchor.position.x
             anchor_y = anchor.position.y
 
-            # test positions at different distances and angles
-            for distance_mult in [0.75, 0.85]:
-                dist = (variety.radius + anchor.variety.radius) * distance_mult
+            # test positions at different distances (alpha) but keep angles
+            for alpha in [0.2, 0.3, 0.4]:
+                min_required = max(variety.radius, anchor.variety.radius)
+                max_allowed = variety.radius + anchor.variety.radius
+                dist = min_required + alpha * (max_allowed - min_required)
+
                 for angle in range(0, 360, 30):
-                    # compute candidate point
                     x = anchor_x + dist * math.cos(math.radians(angle))
                     y = anchor_y + dist * math.sin(math.radians(angle))
 
@@ -221,9 +222,10 @@ class Gardener8(Gardener):
 
                     # need 2+ other species neighbors for exchange
                     if valid and len(neighbor_species) >= 2:
-                        score = len(neighbor_species) * 10 + (1.0 - distance_mult) * 5
+                        score = len(neighbor_species)  # simple scoring
                         if score > best_score:
                             best_score = score
                             best_pos = Position(x, y)
 
         return best_pos
+
