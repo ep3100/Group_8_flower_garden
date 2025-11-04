@@ -51,38 +51,48 @@ class Gardener8(Gardener):
         return (own_production - other_consumption) / (variety.radius**2)
 
     def local_exchange_score(self, variety: PlantVariety, pos: Position) -> float:
-        """Compute nutrient exchange score with neighbors at given position."""
+        """Compute an approximate nutrient exchange score with neighbors at a given position."""
         
-        score = 0  # start with no points - we'll accumulate benefit from neighbors
-        var_r = variety.radius  # radius of plant
-
-        # look at every plant already in the garden
+        score = 0
+        var_r = variety.radius
+        
         for plant in self.garden.plants:
-            # figure out how far away this plant is from our proposed position
+            # check distance for interaction
             dx = pos.x - plant.position.x
             dy = pos.y - plant.position.y
-            dist_sq = dx * dx + dy * dy  # squared distance (faster than sqrt)
-            r_sum = var_r + plant.variety.radius  # combined radius = potential interaction zone
+            dist_sq = dx*dx + dy*dy
+            r_sum = var_r + plant.variety.radius
+            if dist_sq >= r_sum * r_sum:
+                continue  # too far to interact
 
-            # only consider plants close enough that roots would overlap
-            if dist_sq < r_sum * r_sum:
-                # check nutrient exchanges for all three micronutrients
-                for nut in [Micronutrient.R, Micronutrient.G, Micronutrient.B]:
-                    # how much our plant produces of this nutrient
-                    variety_prod = max(0, variety.nutrient_coefficients.get(nut, 0))
-                    # how much the neighbor consumes of this nutrient
-                    neighbor_cons = max(0, -plant.variety.nutrient_coefficients.get(nut, 0))
-                    # benefit our plant gives to the neighbor
-                    score += variety_prod * neighbor_cons
+            for nut in [Micronutrient.R, Micronutrient.G, Micronutrient.B]:
+                # inventory caps
+                our_capacity = 10 * var_r
+                neighbor_capacity = 10 * plant.variety.radius
 
-                    # now the other way: neighbor produces, we consume
-                    neighbor_prod = max(0, plant.variety.nutrient_coefficients.get(nut, 0))
-                    variety_cons = max(0, -variety.nutrient_coefficients.get(nut, 0))
-                    # benefit neighbor gives to our plant
-                    score += neighbor_prod * variety_cons
+                # rough current inventory estimate (use 50% full as proxy, since not currently tracking)
+                our_inv = 0.5 * our_capacity
+                neighbor_inv = 0.5 * neighbor_capacity
 
-        # final score is total benefit from all overlapping neighbors
+                # how much each produces (per tick) - could be nutrient_coefficients * rv
+                our_prod = max(0, variety.nutrient_coefficients.get(nut, 0))
+                neighbor_prod = max(0, plant.variety.nutrient_coefficients.get(nut, 0))
+
+                # how much they can offer (1/4 of current inventory)
+                our_offer = min(our_prod, 0.25 * our_inv)
+                neighbor_offer = min(neighbor_prod, 0.25 * neighbor_inv)
+
+                # actual exchange = min(what we offer, what neighbor offers)
+                exchange_amount = min(our_offer, neighbor_offer)
+
+                # only count if giving > receiving
+                if our_offer > neighbor_offer:
+                    score += exchange_amount  # benefit to neighbor
+                if neighbor_offer > our_offer:
+                    score += exchange_amount  # benefit to us
+
         return score
+
 
     def place_plants(self, rhodos, geraniums, begonias):
         """
