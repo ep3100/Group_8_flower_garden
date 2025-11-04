@@ -50,6 +50,40 @@ class Gardener8(Gardener):
         # score balances own production vs other consumption, penalized by radius
         return (own_production - other_consumption) / (variety.radius**2)
 
+    def local_exchange_score(self, variety: PlantVariety, pos: Position) -> float:
+        """Compute nutrient exchange score with neighbors at given position."""
+        
+        score = 0  # start with no points - we'll accumulate benefit from neighbors
+        var_r = variety.radius  # radius of plant
+
+        # look at every plant already in the garden
+        for plant in self.garden.plants:
+            # figure out how far away this plant is from our proposed position
+            dx = pos.x - plant.position.x
+            dy = pos.y - plant.position.y
+            dist_sq = dx * dx + dy * dy  # squared distance (faster than sqrt)
+            r_sum = var_r + plant.variety.radius  # combined radius = potential interaction zone
+
+            # only consider plants close enough that roots would overlap
+            if dist_sq < r_sum * r_sum:
+                # check nutrient exchanges for all three micronutrients
+                for nut in [Micronutrient.R, Micronutrient.G, Micronutrient.B]:
+                    # how much our plant produces of this nutrient
+                    variety_prod = max(0, variety.nutrient_coefficients.get(nut, 0))
+                    # how much the neighbor consumes of this nutrient
+                    neighbor_cons = max(0, -plant.variety.nutrient_coefficients.get(nut, 0))
+                    # benefit our plant gives to the neighbor
+                    score += variety_prod * neighbor_cons
+
+                    # now the other way: neighbor produces, we consume
+                    neighbor_prod = max(0, plant.variety.nutrient_coefficients.get(nut, 0))
+                    variety_cons = max(0, -variety.nutrient_coefficients.get(nut, 0))
+                    # benefit neighbor gives to our plant
+                    score += neighbor_prod * variety_cons
+
+        # final score is total benefit from all overlapping neighbors
+        return score
+
     def place_plants(self, rhodos, geraniums, begonias):
         """
         Place all plants starting from an initial triad.
@@ -129,7 +163,7 @@ class Gardener8(Gardener):
                     # Verify the position is valid and the plant can be placed there
                     if pos and self.garden.can_place_plant(variety, pos):
                         # Calculate how valuable this placement would be
-                        placement_score = self.score_variety(variety)
+                        placement_score = self.score_variety(variety) + 0.1 * self.local_exchange_score(variety, pos)
 
                         # Keep track of the best placement found so far
                         if placement_score > best_score:
@@ -222,10 +256,9 @@ class Gardener8(Gardener):
 
                     # need 2+ other species neighbors for exchange
                     if valid and len(neighbor_species) >= 2:
-                        score = len(neighbor_species)  # simple scoring
+                        score = len(neighbor_species) + 0.1 * self.local_exchange_score(variety, Position(x, y))
                         if score > best_score:
                             best_score = score
                             best_pos = Position(x, y)
 
         return best_pos
-
