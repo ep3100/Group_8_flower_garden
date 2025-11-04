@@ -102,15 +102,16 @@ class Gardener8(Gardener):
         Then iteratively places remaining plants by finding the best variety-position
         combination that maximizes score while maintaining 2+ different-species neighbors.
         """
-        # this initial placement can be played around with
-        # place initial triad in bottom-left quadrant
-        start_x = self.garden.width / 4
-        start_y = self.garden.height / 4
-
         r1, g1, b1 = rhodos[0], geraniums[0], begonias[0]
 
+        # Sort the initial triad by radius to find the largest
+        initial_plants = [r1, g1, b1]
+        initial_plants.sort(key=lambda x: x.radius, reverse=True)
+
+        plant1, plant2, plant3 = initial_plants
+
         # Pairwise plant combinations
-        pairs = [(r1, g1), (r1, b1), (g1, b1)]
+        pairs = [(plant1, plant2), (plant1, plant3), (plant2, plant3)]
 
         # Compute min/max distances for each pair
         # min_distance = largest radius (avoid one inside another)
@@ -132,14 +133,17 @@ class Gardener8(Gardener):
         # Compute height for equilateral layout
         height = side * math.sqrt(3) / 2
 
-        p_r = Position(start_x, start_y - height / 3)
-        p_g = Position(start_x - side / 2, start_y + 2 * height / 3)
-        p_b = Position(start_x + side / 2, start_y + 2 * height / 3)
+        # Place largest plant's center at (0, 0) - roots can extend outside garden
+        p1 = Position(0, 0)
+        # Place second plant to the right
+        p2 = Position(side, 0)
+        # Place third plant above to form equilateral triangle
+        p3 = Position(side / 2, height)
 
         # place the initial triad
-        self.garden.add_plant(r1, p_r)
-        self.garden.add_plant(g1, p_g)
-        self.garden.add_plant(b1, p_b)
+        self.garden.add_plant(plant1, p1)
+        self.garden.add_plant(plant2, p2)
+        self.garden.add_plant(plant3, p3)
 
         indices = {'R': 1, 'G': 1, 'B': 1}
         species_data = {
@@ -215,60 +219,57 @@ class Gardener8(Gardener):
             anchor_x = anchor.position.x
             anchor_y = anchor.position.y
 
-            # test positions at different distances (alpha) but keep angles
-            for alpha in [0.2, 0.3, 0.4]:
-                min_required = max(variety.radius, anchor.variety.radius)
-                max_allowed = variety.radius + anchor.variety.radius
-                dist = min_required + alpha * (max_allowed - min_required)
+            # Always place as compactly as possible
+            dist = max(variety.radius, anchor.variety.radius)
 
-                for angle in range(0, 360, 30):
-                    x = anchor_x + dist * math.cos(math.radians(angle))
-                    y = anchor_y + dist * math.sin(math.radians(angle))
+            for angle in range(0, 360, 10):
+                x = anchor_x + dist * math.cos(math.radians(angle))
+                y = anchor_y + dist * math.sin(math.radians(angle))
 
-                    # quick bounds check
-                    if not (0 <= x <= self.garden.width and 0 <= y <= self.garden.height):
-                        continue
+                # quick bounds check
+                if not (0 <= x <= self.garden.width and 0 <= y <= self.garden.height):
+                    continue
 
-                    # pre-calc avoid sqrt
-                    neighbor_species = set()
-                    valid = True
+                # pre-calc avoid sqrt
+                neighbor_species = set()
+                valid = True
 
-                    # cheap screening first: same-species spacing
-                    for plant in self.garden.plants:
-                        dx = x - plant.position.x
-                        dy = y - plant.position.y
-                        dist_sq = dx * dx + dy * dy
+                # cheap screening first: same-species spacing
+                for plant in self.garden.plants:
+                    dx = x - plant.position.x
+                    dy = y - plant.position.y
+                    dist_sq = dx * dx + dy * dy
 
-                        # squared overlap check (cheap)
-                        r_limit = max(var_r, plant.variety.radius)
-                        if dist_sq < r_limit * r_limit:  # too close → invalid
+                    # squared overlap check (cheap)
+                    r_limit = max(var_r, plant.variety.radius)
+                    if dist_sq < r_limit * r_limit:  # too close → invalid
+                        valid = False
+                        break
+
+                if not valid:
+                    continue  # skip further checks
+
+                # now check interaction neighbors only if still valid
+                for plant in self.garden.plants:
+                    dx = x - plant.position.x
+                    dy = y - plant.position.y
+                    dist_sq = dx * dx + dy * dy
+                    r_sum = var_r + plant.variety.radius
+
+                    if dist_sq < r_sum * r_sum:
+                        # interacting neighbor
+                        if plant.variety.species == variety.species:
                             valid = False
                             break
+                        neighbor_species.add(plant.variety.species)
+                        if len(neighbor_species) >= 2:
+                            break
 
-                    if not valid:
-                        continue  # skip further checks
-
-                    # now check interaction neighbors only if still valid
-                    for plant in self.garden.plants:
-                        dx = x - plant.position.x
-                        dy = y - plant.position.y
-                        dist_sq = dx * dx + dy * dy
-                        r_sum = var_r + plant.variety.radius
-
-                        if dist_sq < r_sum * r_sum:
-                            # interacting neighbor
-                            if plant.variety.species == variety.species:
-                                valid = False
-                                break
-                            neighbor_species.add(plant.variety.species)
-                            if len(neighbor_species) >= 2:
-                                break
-
-                    # need 2+ other species neighbors for exchange
-                    if valid and len(neighbor_species) >= 2:
-                        score = len(neighbor_species) + 0.1 * self.local_exchange_score(variety, Position(x, y))
-                        if score > best_score:
-                            best_score = score
-                            best_pos = Position(x, y)
+                # need 2+ other species neighbors for exchange
+                if valid and len(neighbor_species) >= 2:
+                    score = len(neighbor_species) + 0.1 * self.local_exchange_score(variety, Position(x, y))
+                    if score > best_score:
+                        best_score = score
+                        best_pos = Position(x, y)
 
         return best_pos
